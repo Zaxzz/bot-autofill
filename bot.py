@@ -7,14 +7,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import os, time, random, traceback
 
-# ================== KONFIG ==================
-EMAIL = os.getenv("RUBIN_EMAIL")  # ambil dari GitHub Secrets
-PASSWORD = os.getenv("RUBIN_PASS")  # ambil dari GitHub Secrets
+EMAIL = os.getenv("RUBIN_EMAIL")   
+PASSWORD = os.getenv("RUBIN_PASS") 
 LOGIN_URL = "https://rubin.id/login.html"
-WINDOW_SIZE = (390, 844)  # tampilan mobile
+WINDOW_SIZE = (390, 844)  
 if not EMAIL or not PASSWORD:
     raise SystemExit("Set RUBIN_EMAIL & RUBIN_PASS di GitHub Secrets dulu ya.")
-
 # ============================================
 
 def jitter(min_ms=200, max_ms=600):
@@ -65,7 +63,6 @@ def toggle_random_two_on_one_off(driver, wait, base_xpath):
 def process_sholat_panel(driver, wait, panel_id, header_text):
     panel_el = ensure_panel_open(driver, wait, panel_id=panel_id, header_text=header_text)
     base_xpath = f"//*[@id='{panel_id}']"
-    # Berhalangan → OFF
     try:
         bh = panel_el.find_element(By.XPATH, ".//input[starts-with(@id,'berhalangan-')]")
         if bh.is_selected():
@@ -73,10 +70,8 @@ def process_sholat_panel(driver, wait, panel_id, header_text):
             jitter()
     except Exception:
         pass
-    # Dilakukan → ON
     click_checkbox_if_needed(driver, wait, f"{base_xpath}//input[starts-with(@id,'dilakukan-')]", desired=True)
     jitter(600, 1000)
-    # Random 2 ON, 1 OFF
     toggle_random_two_on_one_off(driver, wait, base_xpath)
     print(f"✅ {header_text}: selesai")
 
@@ -87,18 +82,15 @@ def main():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument(f"--window-size={WINDOW_SIZE[0]},{WINDOW_SIZE[1]}")
     options.add_argument("--lang=id-ID")
-    # (runner sering set ini)
     chrome_path = os.getenv("CHROME_PATH") or os.getenv("GOOGLE_CHROME_SHIM")
     if chrome_path:
         options.binary_location = chrome_path
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
-
     wait = WebDriverWait(driver, 25)
 
     try:
-        # Login
         driver.get(LOGIN_URL)
         email_box = wait.until(EC.presence_of_element_located(
             (By.XPATH, "//input[contains(@placeholder,'Email') or contains(@placeholder,'No hp')]")
@@ -111,7 +103,6 @@ def main():
         ))
         safe_click(driver, login_btn)
 
-        # Buka kartu "Sudah Sholat ?"
         target_card = wait.until(EC.presence_of_element_located(
             (By.XPATH, "//h6[contains(normalize-space(),'Sudah Sholat')]")
         ))
@@ -121,7 +112,6 @@ def main():
         safe_click(driver, parent_div)
         print("✅ Masuk halaman input sholat")
 
-        # Urutan panel yang diproses
         targets = [
             ("collapse-Subuh",   "Sholat Wajib Subuh"),
             ("collapse-Dzuhur",  "Sholat Wajib Dzuhur"),
@@ -138,6 +128,28 @@ def main():
                 print(f"⚠️ {title}: gagal diproses ({e}). Lanjut yang lain...")
 
         print("🎉 Semua panel dicoba diproses.")
+
+        try:
+            save_btn = wait.until(EC.element_to_be_clickable((By.ID, "btnSaveShalat")))
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", save_btn)
+            time.sleep(0.6)
+            safe_click(driver, save_btn)
+            print("💾 Klik tombol 'Simpan Aktivitas'")
+
+            try:
+                WebDriverWait(driver, 8).until(
+                    EC.any_of(
+                        EC.presence_of_element_located((By.XPATH, "//*[contains(.,'Berhasil') or contains(.,'Tersimpan')]")),
+                        EC.presence_of_element_located((By.XPATH, "//*[@role='alert' or contains(@class,'toast') or contains(@class,'alert-success')]"))
+                    )
+                )
+                print("✅ Terekam: notifikasi sukses terdeteksi.")
+            except Exception:
+                print("ℹ️ Tidak menemukan notifikasi, kemungkinan tetap tersimpan (cek manual kalau ragu).")
+
+            time.sleep(1.5)  
+        except Exception as e:
+            print(f"⚠️ Gagal klik tombol Simpan: {e}")
 
     except Exception as e:
         print("❌ ERROR:", e)
