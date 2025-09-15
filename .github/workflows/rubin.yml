@@ -1,14 +1,9 @@
-name: Rubin Auto Fill
+name: Rubin Auto Fill (23:17 WIB)
 
 on:
   schedule:
-    - cron: '*/5 13-14 * * *'
-  workflow_dispatch:
-    inputs:
-      force_run:
-        description: 'Run sekarang (abaikan gate waktu 20–22 WIB)?'
-        required: false
-        default: 'false'
+    - cron: "17 16 * * *"   # 23:17 WIB (WIB=UTC+7)
+  workflow_dispatch: {}      # opsional
 
 jobs:
   run-bot:
@@ -18,82 +13,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Tentukan slot acak harian (20:00–22:00 WIB) atau override
-        id: gate
-        shell: bash
-        run: |
-          FORCE="${{ github.event.inputs.force_run }}"
-          if [ "$FORCE" = "true" ]; then
-            echo "force_run diaktifkan -> langsung jalan"
-            echo "should_run=1" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # --- mode normal (tanpa override) ---
-          NOW_H=$(date -u +%H)
-          NOW_M=$(date -u +%M)
-
-          # 24 slot @5 menit selama 2 jam (13–14 UTC)
-          SLOT=$(( $(date -u +%F | sha1sum | awk '{print "0x"substr($1,1,4)}') % 24 ))
-
-          if [ $SLOT -lt 12 ]; then
-            TARGET_H=13
-            TARGET_M=$(( (SLOT % 12) * 5 ))
-          else
-            TARGET_H=14
-            TARGET_M=$(( ((SLOT-12) % 12) * 5 ))
-          fi
-
-          echo "Target slot (UTC) = ${TARGET_H}:$(printf '%02d' ${TARGET_M})"
-          echo "Now (UTC)         = ${NOW_H}:$(printf '%02d' ${NOW_M})"
-
-          SHOULD_RUN="0"
-          if [ "$NOW_H" -eq "$TARGET_H" ] && [ "$NOW_M" -eq "$TARGET_M" ]; then
-            SHOULD_RUN="1"
-          fi
-
-          echo "should_run=${SHOULD_RUN}" >> $GITHUB_OUTPUT
-
       - name: Setup Chrome
-        if: steps.gate.outputs.should_run == '1'
         uses: browser-actions/setup-chrome@v1
+        id: chrome
 
       - name: Setup Python
-        if: steps.gate.outputs.should_run == '1'
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.12"
 
-      - name: Install deps
-        if: steps.gate.outputs.should_run == '1'
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install selenium webdriver-manager
+          fi
 
-      - name: Run bot (dengan retry)
-        if: steps.gate.outputs.should_run == '1'
+      - name: Run bot
         env:
           RUBIN_EMAIL: ${{ secrets.RUBIN_EMAIL }}
           RUBIN_PASS:  ${{ secrets.RUBIN_PASS }}
-          CHROME_PATH: ${{ env.CHROME_PATH }}
-        shell: bash
         run: |
           set -e
-          ATTEMPTS=3
-          DELAY=25
-          for i in $(seq 1 $ATTEMPTS); do
-            echo "Percobaan $i dari $ATTEMPTS..."
-            if python bot.py; then
-              echo "Sukses pada percobaan $i"
-              exit 0
-            fi
-            if [ $i -lt $ATTEMPTS ]; then
-              echo "Gagal. Tunggu $DELAY detik sebelum retry..."
-              sleep $DELAY
-            fi
-          done
-          echo "Gagal setelah $ATTEMPTS percobaan."
-          exit 1
+          python bot.py 2>/dev/null || python main.py
 
       - name: Upload screenshots (if any)
         if: always()
@@ -101,4 +45,5 @@ jobs:
         with:
           name: screenshots
           path: |
+            screenshots/**
             *.png
